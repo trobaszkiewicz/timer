@@ -16,13 +16,12 @@ TEST(TimerTest, SanityCheck) {
 TEST(TimerTest, schedule_once_executed) {
   Timer t;
   auto start = std::chrono::milliseconds(1);
-  bool result = false;
-  std::promise<int> p;
-  auto f = p.get_future();
-  t.schedule([&result, &p](){result = true; p.set_value(0);}, start);
+  std::promise<int> promise;
+  auto future = promise.get_future();
+  t.schedule([&promise](){promise.set_value(123);}, start);
 
-  f.get(); // wait for scheduled task to run
-  ASSERT_TRUE(result);
+  auto result = future.get(); // wait for scheduled task to run
+  ASSERT_THAT(result, testing::Eq(123));
 }
 
 TEST(TimerTest, schedule_once_cancelled) {
@@ -65,3 +64,33 @@ TEST(TimerTest, destruct_timer_while_task_is_scheduled) {
   ASSERT_NO_THROW(timer_function());
 }
 
+TEST(TimerTest, schedule_twice_throws) {
+  Timer t;
+  t.schedule([](){}, std::chrono::milliseconds(1));
+  ASSERT_THROW(t.schedule([](){}, std::chrono::milliseconds(1)), std::logic_error);
+}
+
+std::promise<int> schedule_raw_function_promise;
+void raw_function()
+{
+  schedule_raw_function_promise.set_value(5);
+}
+
+TEST(TimerTest, schedule_raw_function) {
+  Timer t;
+  auto promise = schedule_raw_function_promise.get_future();
+  t.schedule(raw_function, std::chrono::milliseconds(1));
+  auto i = promise.get();
+  ASSERT_THAT(i, testing::Eq(5));
+}
+
+TEST(TimerTest, schedule_std_function) {
+  Timer t;
+  std::promise<int> promise;
+  auto future = promise.get_future();
+  std::function<void(void)> function = [&promise](){promise.set_value(123);};
+
+  t.schedule(function, std::chrono::milliseconds(1));
+  auto result = future.get();
+  ASSERT_THAT(result, testing::Eq(123));
+}
